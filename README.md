@@ -59,6 +59,7 @@ JVM and Android applications. It's a fork of kotatsu-parsers from [KotatsuApp](h
 ## Projects that use the library
 
 - [Kotatsu](https://github.com/KotatsuApp/Kotatsu) (Dead)
+- [Kototoro](https://github.com/skepsun/Kototoro)
 - [Doki](https://github.com/DokiTeam/Doki) (Reference)
 - [kotatsu-dl](https://github.com/YakaTeam/kotatsu-dl)
 - [Shirizu](https://github.com/ztimms73/shirizu) (Dead)
