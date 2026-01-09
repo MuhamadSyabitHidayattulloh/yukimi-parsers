@@ -2,6 +2,9 @@ package org.koitharu.kotatsu.parsers.site.all
 
 import androidx.collection.ArrayMap
 import kotlinx.coroutines.coroutineScope
+import okhttp3.Headers
+import okhttp3.Interceptor
+import okhttp3.Response
 import org.koitharu.kotatsu.parsers.MangaLoaderContext
 import org.koitharu.kotatsu.parsers.MangaSourceParser
 import org.koitharu.kotatsu.parsers.config.ConfigKey
@@ -12,6 +15,7 @@ import org.koitharu.kotatsu.parsers.util.suspendlazy.suspendLazy
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.TimeUnit
 
 @MangaSourceParser("MANGAPARK", "MangaPark")
 internal class MangaPark(context: MangaLoaderContext) :
@@ -40,6 +44,10 @@ internal class MangaPark(context: MangaLoaderContext) :
 		super.onCreateConfig(keys)
 		keys.add(userAgentKey)
 	}
+
+	override fun getRequestHeaders(): Headers = super.getRequestHeaders().newBuilder()
+		.add("Referer", "https://$domain/")
+		.build()
 
 	override val availableSortOrders: Set<SortOrder> = EnumSet.of(
 		SortOrder.ALPHABETICAL,
@@ -254,6 +262,45 @@ internal class MangaPark(context: MangaLoaderContext) :
 			}
 	}
 
+	override fun intercept(chain: Interceptor.Chain): Response {
+		val request = chain.request()
+		val response = chain.proceed(request)
+
+		if (response.isSuccessful) {
+			return response
+		}
+
+		val urlString = request.url.toString()
+		response.close()
+
+		if (SERVER_PATTERN.containsMatchIn(urlString)) {
+			for (server in SERVERS) {
+				val newUrl = urlString.replace(SERVER_PATTERN, "https://$server")
+				if (newUrl == urlString) continue
+				val newRequest = request.newBuilder()
+					.url(newUrl)
+					.build()
+
+				try {
+					val newResponse = chain
+						.withConnectTimeout(5, TimeUnit.SECONDS)
+						.withReadTimeout(10, TimeUnit.SECONDS)
+						.proceed(newRequest)
+
+					if (newResponse.isSuccessful) {
+						return newResponse
+					}
+
+					newResponse.close()
+				} catch (_: Exception) {
+					// ignore, try next mirror
+				}
+			}
+		}
+
+		return chain.proceed(request)
+	}
+
 	private suspend fun fetchTags(): Map<String, MangaTag> {
 		val tagElements = webClient.httpGet("https://$domain/search").parseHtml()
 			.select("div.flex-col:contains(Genres) div.whitespace-nowrap")
@@ -315,5 +362,13 @@ internal class MangaPark(context: MangaLoaderContext) :
 
 			else -> 0L
 		}
+	}
+
+	companion object {
+		private val SERVER_PATTERN = Regex("https://s\\d{2}")
+		private val SERVERS = listOf(
+			"s01", "s03", "s04", "s00", "s05",
+			"s06", "s07", "s08", "s09", "s10", "s02"
+		)
 	}
 }
