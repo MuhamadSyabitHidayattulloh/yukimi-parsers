@@ -212,11 +212,9 @@ internal class LxManga(context: MangaLoaderContext) : PagedMangaParser(context, 
 				if (url.endsWith(".jpg", ignoreCase = true) ||
 					url.endsWith(".png", ignoreCase = true)
 				) {
-					val imgUrl = url.toHttpUrl().newBuilder()
-						.fragment(CHAPTER_FRAGMENT)
 					MangaPage(
 						id = generateUid(url),
-						url = imgUrl.build().toString(),
+						url = "$CHAPTER_FRAGMENT$url",
 						preview = null,
 						source = source,
 					)
@@ -240,7 +238,7 @@ internal class LxManga(context: MangaLoaderContext) : PagedMangaParser(context, 
 		}
 
 		val newRequest = request.newBuilder()
-			.url(url.substringAfter(CHAPTER_FRAGMENT))
+			.url(url.substringAfter(CHAPTER_FRAGMENT).toHttpUrl())
 			.headers(headers)
 			.build()
 
