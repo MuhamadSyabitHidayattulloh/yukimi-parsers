@@ -1,4 +1,4 @@
-package org.koitharu.kotatsu.parsers.site.mangareader.id
+package org.koitharu.kotatsu.parsers.site.id
 
 import org.koitharu.kotatsu.parsers.MangaLoaderContext
 import org.koitharu.kotatsu.parsers.MangaSourceParser
@@ -15,12 +15,17 @@ import java.util.TimeZone
 internal class Komikcast(context: MangaLoaderContext) :
     PagedMangaParser(context, MangaParserSource.KOMIKCAST, pageSize = 20) {
 
-    override val configKeyDomain: ConfigKey.Domain = ConfigKey.Domain("v1.komikcast.fit")
+    override val configKeyDomain = ConfigKey.Domain("v1.komikcast.fit")
     private val apiUrl = "https://be.komikcast.fit"
 
     override val userAgentKey = ConfigKey.UserAgent(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
+
+    override fun onCreateConfig(keys: MutableCollection<ConfigKey<*>>) {
+        super.onCreateConfig(keys)
+        keys.add(userAgentKey)
+    }
 
     override fun getRequestHeaders() = super.getRequestHeaders().newBuilder()
         .add("Origin", "https://$domain")
@@ -41,18 +46,28 @@ internal class Komikcast(context: MangaLoaderContext) :
             isSearchSupported = true
         )
 
-    private val tagMap = listOf(
-        "Action", "Adventure", "Comedy", "Cooking", "Demons", "Drama", "Ecchi", "Fantasy", "Game",
-        "Gender Bender", "Gore", "Harem", "Historical", "Horror", "Isekai", "Josei", "Magic",
-        "Martial Arts", "Mature", "Mecha", "Medical", "Military", "Music", "Mystery", "One-Shot",
-        "Police", "Psychological", "Reincarnation", "Romance", "School", "School Life", "Sci-Fi",
-        "Seinen", "Senen", "Shoujo", "Shoujo Ai", "Shounen", "Shounen Ai", "Slice of Life", "Sports",
-        "Super Power", "Supernatural", "Thriller", "Tragedy", "Vampire", "Webtoons", "4-Koma", "Yuri"
-    )
-
     override suspend fun getFilterOptions(): MangaListFilterOptions {
+        val genresUrl = "$apiUrl/genres"
+        val json = try {
+            webClient.httpGet(genresUrl).parseJson()
+        } catch (_: Exception) {
+            null
+        }
+
+        val tags = mutableSetOf<MangaTag>()
+        val data = json?.optJSONArray("data")
+        if (data != null) {
+            for (i in 0 until data.length()) {
+                val item = data.getJSONObject(i)
+                val id = item.optString("id", item.optString("slug", ""))
+                val genreObj = item.optJSONObject("data") ?: item
+                val name = genreObj.optString("name", genreObj.optString("title", id))
+                if (id.isNotEmpty()) tags.add(MangaTag(id, name, source))
+            }
+        }
+
         return MangaListFilterOptions(
-            availableTags = tagMap.map { MangaTag(it, it, source) }.toSet(),
+            availableTags = tags,
             availableStates = EnumSet.of(MangaState.ONGOING, MangaState.FINISHED),
             availableContentTypes = EnumSet.of(
                 ContentType.MANGA,
@@ -67,6 +82,7 @@ internal class Komikcast(context: MangaLoaderContext) :
             append("$apiUrl/series?")
             append("page=$page")
             append("&take=$pageSize")
+            append("&includeMeta=true")
 
             if (filter.query.isNullOrEmpty()) {
                 when (order) {
@@ -77,7 +93,7 @@ internal class Komikcast(context: MangaLoaderContext) :
                     else -> append("&preset=rilisan_terbaru")
                 }
             } else {
-                val q = filter.query!!.replace("\"", "\\\"")
+                val q = filter.query.replace("\"", "\\\"")
                 val filterStr = "title=like=\"$q\",nativeTitle=like=\"$q\""
                 append("&filter=${filterStr.urlEncoded()}")
             }
@@ -121,15 +137,15 @@ internal class Komikcast(context: MangaLoaderContext) :
                 Manga(
                     id = generateUid(relativeUrl),
                     title = seriesData.getString("title"),
-                    altTitles = emptySet<String>(),
+                    altTitles = emptySet(),
                     url = relativeUrl,
                     publicUrl = "https://$domain$relativeUrl",
                     rating = seriesData.optDouble("rating", -1.0).toFloat().div(10f).takeIf { it >= 0 } ?: RATING_UNKNOWN,
                     contentRating = ContentRating.SAFE,
                     coverUrl = seriesData.optString("coverImage"),
-                    tags = emptySet<MangaTag>(),
+                    tags = emptySet(),
                     state = null,
-                    authors = emptySet<String>(),
+                    authors = emptySet(),
                     source = source
                 )
             )
@@ -193,7 +209,7 @@ internal class Komikcast(context: MangaLoaderContext) :
             title = title,
             description = description,
             coverUrl = coverUrl,
-            authors = author?.let { setOf(it) } ?: emptySet<String>(),
+            authors = author?.let { setOf(it) } ?: emptySet(),
             state = state,
             tags = tags,
             chapters = chapters
